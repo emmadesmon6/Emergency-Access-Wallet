@@ -145,3 +145,5 @@
 
 (begin
   (var-set last-owner-activity stacks-block-height))
+
+
