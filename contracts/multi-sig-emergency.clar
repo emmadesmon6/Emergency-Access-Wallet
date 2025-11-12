@@ -6,6 +6,10 @@
 (define-constant err-invalid-threshold (err u305))
 (define-constant err-approver-exists (err u306))
 
+(define-constant err-claim-expired (err u307))
+
+(define-data-var claim-expiration-window uint u1008)
+
 (define-data-var contract-owner principal tx-sender)
 (define-data-var approval-threshold uint u2)
 (define-data-var claim-nonce uint u0)
@@ -100,6 +104,42 @@
       (begin
         (asserts! (is-eq tx-sender (get claimer claim)) err-owner-only)
         (asserts! (not (get executed claim)) err-no-claim-pending)
+        (asserts! (>= (get approval-count claim) (var-get approval-threshold)) err-insufficient-approvals)
+        (map-set claim-approvals claim-id (merge claim { executed: true }))
+        (ok (get amount claim)))
+    err-no-claim-pending))
+
+
+
+
+
+(define-read-only (get-claim-expiration-window)
+  (var-get claim-expiration-window))
+
+(define-read-only (is-claim-expired (claim-id uint))
+  (match (map-get? claim-approvals claim-id)
+    claim
+      (let ((current-height stacks-block-height)
+            (claim-created (get created-block claim))
+            (expiration-window (var-get claim-expiration-window))
+            (expiration-block (+ claim-created expiration-window)))
+        (>= current-height expiration-block))
+    true))
+
+(define-public (set-claim-expiration-window (new-window uint))
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) err-owner-only)
+    (asserts! (> new-window u0) err-invalid-threshold)
+    (var-set claim-expiration-window new-window)
+    (ok true)))
+
+(define-public (execute-claim-with-expiration (claim-id uint))
+  (match (map-get? claim-approvals claim-id)
+    claim
+      (begin
+        (asserts! (is-eq tx-sender (get claimer claim)) err-owner-only)
+        (asserts! (not (get executed claim)) err-no-claim-pending)
+        (asserts! (not (is-claim-expired claim-id)) err-claim-expired)
         (asserts! (>= (get approval-count claim) (var-get approval-threshold)) err-insufficient-approvals)
         (map-set claim-approvals claim-id (merge claim { executed: true }))
         (ok (get amount claim)))
